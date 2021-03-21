@@ -33,6 +33,7 @@ try:
     import feedparser
 except:
     pipmain(["install", "--user", "feedparser"])
+    import feedparser
 
 verboseprint = lambda *a: None
 parser = argparse.ArgumentParser(
@@ -45,7 +46,7 @@ parser.add_argument(
     "-l",
     "--leave",
     action="store_true",
-    help="Doesn't cleanup intermideate HTML Chapters, Book files after conversion",
+    help="Don't cleanup intermediate Book files after conversion",
 )
 args = parser.parse_args()
 
@@ -261,6 +262,7 @@ def cleanup(chapters):
     os.rmdir(directory)
     os.remove("title.txt")
     os.remove("Book.md")
+    os.remove("Book.docx")
 
 
 def inputChoice():
