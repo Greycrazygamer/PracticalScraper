@@ -1,13 +1,35 @@
 #!/usr/bin/env python 
 import subprocess
-import feedparser
 import re
 import os
 import sys
+import time
 import urllib2
 import argparse
+from multiprocessing import Pool
+
+try:
+        import feedparser
+except:
+        print( "ERROR: feedparser not install\n Run 'pip install feedparser'" )
+        exit(0)
 
 verboseprint = lambda *a: None 
+
+parser = argparse.ArgumentParser(description='Strips and converts A Practical Guide To Evil from Wordpress into epub and docx.')
+parser.add_argument('-v', '--verbose', action='store_true',
+                     help='Print information on progress')
+parser.add_argument('-l', '--leave', action='store_true',
+                     help='Leaves Book.docx file after conversion')
+args = parser.parse_args()
+
+directory = "./.Chapters/"
+numOfBooks = 4
+
+if( args.verbose ):
+   def verboseprint( *args ): 
+      for arg in args: print( arg )
+
 
 def Icreator( num ):
    string = ""
@@ -15,7 +37,9 @@ def Icreator( num ):
       string += "I"
    return string
 
-def stripper( basename, filename ):
+def stripper( chapter ):
+   filename = directory + chapter.title + ".html"
+   basename = chapter.title
    tempfile = basename + ".tmp"
    with open( filename, 'r') as src, open( tempfile, "w") as dest:
       delete = False
@@ -46,6 +70,7 @@ def stripper( basename, filename ):
 
 def findBaseRSS( baseurl ):
    pageIds = []
+   dates = []
    pageId = 1
    feed = feedparser.parse( baseurl + str( pageId ))
    done = False
@@ -55,62 +80,64 @@ def findBaseRSS( baseurl ):
       for item in feed.entries:
          if "Prologue" in item.title:
             pageIds.append( pageId )
+            dates.append(item.published_parsed)
       pageId += 1
       feed = feedparser.parse( baseurl + str( pageId ))
-      if len(pageIds) == 3:
+      if len(pageIds) == numOfBooks:
          done = True
-   verboseprint( 'Books start at: %s' %pageIds )
-   return pageIds
+   pageIds.reverse()
+   dates.reverse()
+   print "Found Start of Books "
+   verboseprint( '%s' %pageIds )
+   return pageIds, dates
 
 def grabRSS( book ):
    baseurl = "https://practicalguidetoevil.wordpress.com/feed/?paged="
-   pageIds = findBaseRSS( baseurl )
+   pageIds, prologue_dates = findBaseRSS( baseurl )
    chapters = []
-   add = 0
-   if( book == 1 ):
-      for pageId in range( pageIds[1], pageIds[2] + 1 ):
-         feed = feedparser.parse( baseurl + str( pageId ))
-         for entry in feed.entries:
-            if 'Epilogue' in entry.title:  add = 1
-            if add == 1:  chapters.append( entry )
-            if 'Prologue' in entry.title:  add = 0
-   if( book == 2 ):
-      for pageId in range( pageIds[0], pageIds[1] + 1 ):
-         feed = feedparser.parse( baseurl + str( pageId ))
-         for entry in feed.entries:
-            if 'Epilogue' in entry.title and add == 0:  add = 1
-            if add == 1:  chapters.append( entry )
-            if 'Prologue' in entry.title and add == 1:  add = 2
-   if( book == 3):
-      add = 1
-      for pageId in range( 0, pageIds[0] + 1 ):
-         feed = feedparser.parse( baseurl + str( pageId ))
-         for entry in feed.entries:
-            if add == 1:  chapters.append( entry )
-            if 'Prologue' in entry.title:  add = 0
-   chapters.reverse()
+   stop = False
+   for pageId in range( pageIds[book-1]+1, pageIds[book]-1, -1 ):
+      feed = feedparser.parse( baseurl + str( pageId ))
+      
+      for entry in reversed(feed.entries):
+         if entry.published_parsed == prologue_dates[book]:
+            stop = True
+         if not stop:
+            chapters.append( entry )
    for c in chapters: c.title = c.title.encode('ASCII', 'ignore')
+   if chapters[0].title == 'Summary': 
+      chapters = chapters[1:]
+   while chapters[0].title != 'Prologue':
+      verboseprint ("Removing " + chapters[0].title)
+      chapters = chapters[1:]
+      
    getHTMLs( chapters )
    return chapters
-   
+
+def getHTML( chapter ):
+   page = urllib2.urlopen( chapter.link )
+   data = page.read()
+   fileTitle = directory + chapter.title + ".html"
+
+   with open( fileTitle, "w" ) as htmlFile:
+      htmlFile.write(data)
+   verboseprint( fileTitle + " Written")
+    
 def getHTMLs( chapters ):
-   if not os.path.exists( directory): os.makedirs(directory)
-   for chapter in chapters:
-      page = urllib2.urlopen( chapter.link )
-      data = page.read()
-      fileTitle = directory + chapter.title + ".html"
+   if not os.path.exists( directory ): os.makedirs( directory )
+   p = Pool( 4 )
+   p.map( getHTML, chapters )
 
-      with open( fileTitle, "w" ) as htmlFile:
-         htmlFile.write(data)
-      verboseprint( fileTitle + " Written")
-
-def massProcess( chapters ):
+def processChapters( chapters ):
+   print "Processing Chapters"
    temps = []
+   p = Pool( 4 )
+   p.map( stripper, chapters )
+   
    for chapter in chapters:
       filename = directory + chapter.title + ".html"
-      basename = chapter.title
-      stripper( basename, filename ) 
       temps.append( filename )
+   
    cmd = [ 'pandoc', '-s' ]
    cmd.extend( temps )
    cmd.append( '-o' )
@@ -126,96 +153,65 @@ def massProcess( chapters ):
    
 
 def processAndConvert( book, chapters ):
-   if args.individual:
-      for chapter in chapters:
-         filename = directory + chapter.title + ".html"
-         basename = directory + chapter.title
-         stripper( basename, filename )   
-         if( os.path.exists( basename + '.docx' ) == False or 
-            args.force ):
-            cmd = [ 'pandoc', '-o', basename + '.docx', filename ]
-            subprocess.call( cmd )
-            verboseprint( basename + '.docx' + " Converted" )
-         else:
-            verboseprint( basename + '.docx' + " Exists" )
-   else:
-      massProcess( chapters )
-      verboseprint( "Converted Book " + str(book) + " into Book.docx")
-      createEpub( book )
+   processChapters( chapters )
+   verboseprint( "Converted Book " + str(book) + " into Book.docx")
+   createEpub( book )
 
 def createEpub( book ):
-   cmd = [ 'pandoc', '-o', "Book.html", 'Book.docx' ]
+   cmd = [ 'pandoc', '-s', 'Book.docx', '-t', 'markdown', '-o', 'Book.md' ]
    verboseprint( cmd )
    subprocess.call( cmd )
-   verboseprint( "Converted Book.docx into Book.html" )
-   cmd = [ 'pandoc', '-o', "Book.md", 'Book.html', '--parse-raw' ]
-   verboseprint( cmd )
-   subprocess.call( cmd )
-   verboseprint( "Converted Book.html into Book.md" )
+   verboseprint( "Converted Book.docx into Book.md" )
    
    data = "---\n"
    data += "title:\n"
    data += "- type: main\n"
-   data += "  text: A Pracitcal Guide To Evil\n"
+   data += "  text: A Pracitcal Guide To Evil Book " + Icreator( book ) + "\n"
    data += "- type: subtitle\n"
-   data += "  text: Book " + Icreator( book ) + "\n"
+   data += "  text: Book " + Icreator( book ) + "\n" 
    data += "author: David Verburg\n"
    data += "language: en-UK\n"
    data += "..."
   
    with open("title.txt", "w") as meta:
       meta.write(data)
-   title = "Book_" + Icreator( book ) + ".epub"
-   cmd = [ 'pandoc', '-S', '-o', title, 'title.txt', 'Book.md' ]
+   title = "A_Practical_Guide_To_Evil_Book_" + Icreator( book )
+   cmd = [ 'pandoc', '-o', title + ".epub", 'title.txt', 'Book.md' ]
    verboseprint( cmd )
    subprocess.call( cmd )
-   print( "Converted Book " + str(book) + " into " + title )
+   cmd = [ 'ebook-convert', title + ".epub",  title + ".mobi" ]
+   verboseprint( cmd )
+   try:
+      subprocess.call( cmd )
+   except:
+      print( "ebook-convert failed... Is calibre installed?")
+      print( "Linux: \"apt-get install calibre\"")
+      print( "MacOS: \"brew cask install calibre\"")
+   
+   print( "Saved Book " + str(book) + " as " + title )
 
 def cleanup( chapters ):
    verboseprint( "Cleaning Up")
    for chapter in chapters:
       filename = directory + chapter.title + ".html"
       os.remove( filename )
-   if not args.leave and not args.individual:
+   if not args.leave:
       os.remove( "Book.docx")
-   if not args.individual:
-      os.remove( "title.txt")
-      os.remove( "Book.md")
-      os.remove( "Book.html")
-      os.rmdir( directory )
+   os.remove( "title.txt")
+   os.remove( "Book.md")
+   os.rmdir( directory )
 
 def main():
-   book = input( 'Which book do you want (1/2/3/)? ' )
-   con = ""
-   if book is 3: 
-      con = raw_input( 'Warning: book 3 is experimental. Continue (y/n)? ')
-   if con == 'n': exit(0)
+   book = input( 'Which book do you want (1/2/3/4)? ' )
+   if book is 4: 
+      print "Book 4 is not finished"
+      exit(0)
    chapters = grabRSS( book )
    processAndConvert( book, chapters )
    cleanup( chapters )
    
    
 
-
-parser = argparse.ArgumentParser(description='Strips and converts A Practical Guide To Evil from Wordpress into docx.')
-parser.add_argument('-v', '--verbose', action='store_true',
-                     help='Print information on progress')
-parser.add_argument('-f', '--force', action='store_true',
-                     help='Force conversion even if file already exists')
-parser.add_argument('-l', '--leave', action='store_true',
-                     help='Leaves Book.docx file after conversion')
-parser.add_argument('-i', '--individual', action='store_true',
-                     help='Converts each chapter into a seperate docx file')
-args = parser.parse_args()
-if args.individual and args.leave:
-   print( "Cannot have both -l and -i as flags" )
-   exit(1)
-
-directory = "./Chapters/"
-if( args.verbose ):
-   def verboseprint( *args ): 
-      for arg in args: print( arg )
-
 main()
-		
+                
 
