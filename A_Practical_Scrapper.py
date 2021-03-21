@@ -1,10 +1,10 @@
-#!/usr/bin/env python 
+#!/usr/bin/env python3
 import subprocess
 import re
 import os
 import sys
 import time
-import urllib2
+import urllib.request, urllib.error, urllib.parse
 import argparse
 from multiprocessing import Pool
 from pip._internal import main as pipmain
@@ -25,7 +25,7 @@ parser.add_argument('-l', '--leave', action='store_true',
 args = parser.parse_args()
 
 directory = "./.Chapters/"
-numOfBooks = 4
+numOfBooks = 6
 
 if( args.verbose ):
    def verboseprint( *args ): 
@@ -35,7 +35,7 @@ if( args.verbose ):
 
 def setup_dependencies():
    pandoc_cmd = [ 'pandoc', '-v' ]
-   calibre_cmd = [ 'ebook-convert', '-v' ]
+   calibre_cmd = [ 'ebook-convert', '--version' ]
 
    pandoc_error = "pandoc failed... Is pandoc installed?\n" \
                   "Linux: \"apt-get install pandoc\"\n" \
@@ -139,7 +139,7 @@ def findBaseRSS( baseurl ):
          done = True
    pageIds.reverse()
    dates.reverse()
-   print "Found Start of Books "
+   print("Found Start of Books ")
    pageIds.append(1)
    verboseprint( '%s' %pageIds )
    return pageIds, dates
@@ -153,23 +153,23 @@ def grabRSS( book ):
       feed = feedparser.parse( baseurl + str( pageId ))
       
       for entry in reversed(feed.entries):
-         if book is not 4 and entry.published_parsed == prologue_dates[book]:
+         if book is not numOfBooks and entry.published_parsed == prologue_dates[book]:
             stop = True
          if not stop:
             chapters.append( entry )
-   for c in chapters: c.title = c.title.encode('ASCII', 'ignore')
    if chapters[0].title == 'Summary': 
       chapters = chapters[1:]
    while chapters[0].title != 'Prologue':
-      verboseprint ("Removing " + chapters[0].title)
+      verboseprint("Removing " + str(chapters[0].title) )
       chapters = chapters[1:]
       
    getHTMLs( chapters )
    return chapters
 
 def getHTML( chapter ):
-   page = urllib2.urlopen( chapter.link )
+   page = urllib.request.urlopen( chapter.link )
    data = page.read()
+   data = data.decode('utf-8')
    fileTitle = directory + chapter.title + ".html"
 
    with open( fileTitle, "w" ) as htmlFile:
@@ -178,13 +178,13 @@ def getHTML( chapter ):
     
 def getHTMLs( chapters ):
    if not os.path.exists( directory ): os.makedirs( directory )
-   p = Pool( 4 )
+   p = Pool( 6 )
    p.map( getHTML, chapters )
 
 def processChapters( chapters ):
-   print "Processing Chapters"
+   print("Processing Chapters")
    temps = []
-   p = Pool( 4 )
+   p = Pool( 6 )
    p.map( stripper, chapters )
    
    for chapter in chapters:
@@ -239,7 +239,7 @@ def createEpub( book ):
       print( "Linux: \"apt-get install calibre\"")
       print( "MacOS: \"brew cask install calibre\"")
    
-   print( "Saved Book " + str(book) + " as " + title )
+   print(( "Saved Book " + str(book) + " as " + title ))
 
 def cleanup( chapters ):
    verboseprint( "Cleaning Up")
@@ -254,13 +254,13 @@ def cleanup( chapters ):
 
 def main():
    setup_dependencies()
-   book = input( 'Which book do you want (1/2/3/4/5=all)? ' )
+   book = eval(input( 'Which book do you want (1/2/3/4/5/6/7=all)? ' ))
    books = []
-   if book is 4:
-      print "Book 4 is incomplete, grabbing all avaliable chapters"
-   if book is 5: 
-      print "Book 5 is not written, making all books"
-      books = [ 1, 2, 3, 4 ]
+   if book is numOfBooks:
+      print( "Book ", numOfBooks, " is incomplete, grabbing all avaliable chapters")
+   if book is numOfBooks + 1: 
+      print( "Book : ", numOfBooks + 1, " is not written, making all books")
+      books = list( range( 1, numOfBooks + 1 ) )
    else:
       books = [ book ]
    
@@ -270,7 +270,6 @@ def main():
       cleanup( chapters )
    
    
-
 main()
                 
 
