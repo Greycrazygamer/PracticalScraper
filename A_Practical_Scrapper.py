@@ -8,8 +8,8 @@ from itertools import chain
 import concurrent.futures
 import pstats
 import cProfile
+import subprocess
 import requests
-from pip._internal import main as pipmain
 
 
 def profile(func):
@@ -32,7 +32,7 @@ def profile(func):
 try:
     import feedparser
 except:
-    pipmain(["install", "--user", "feedparser"])
+    subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'feedparser', '--user'])
     import feedparser
 
 verboseprint = lambda *a: None
@@ -52,7 +52,7 @@ args = parser.parse_args()
 
 # GLOBAL VARS
 directory = "./.Chapters/"
-NUM_OF_BOOKS = 6
+NUM_OF_BOOKS = 7
 # Max rss page to look for... threads end up wasting 0.001s looking at invalid urls
 MAX_RSS_ID = 100
 
@@ -269,16 +269,13 @@ def inputChoice():
     books = []
     choice = ""
     while len(choice) == 0:
-        print("[1-6] Get Book #")
+        print("[1-7] Get Book #")
         print("[a]   Get All Books")
         print("[q]   Quit")
         choice = input("Which book do you want? ")
         if choice.isdigit() and int(choice) <= NUM_OF_BOOKS:
             books = [int(choice)]
-            if int(choice) is NUM_OF_BOOKS:
-                print("Book %s is incomplete, grabbing all avaliable chapters" % choice)
-            else:
-                print("Making book %s" % choice)
+            print("Making book %s" % choice)
         elif choice == "a":
             books = list(range(1, NUM_OF_BOOKS + 1))
             print("Making all books")
